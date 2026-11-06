@@ -242,7 +242,7 @@ class LocalModelsActivity : ComponentActivity() {
                         try {
                             coroutineContext.ensureActive()
                             LocalEngineOwner.conversation = next.createConversation(ConversationConfig(
-                                systemInstruction = Contents.of("You are a phone-local assistant. Use the provided image tools when the user asks to inspect or collect phone images. Report the actual tool result and any failures or limitations; never claim an action occurred without a tool result."),
+                                systemInstruction = Contents.of("You are a phone-local assistant. Use count_phone_images to count images and collect_phone_images to copy them into Hermes Collection while keeping originals. Use list_selected_folder and read_selected_text_file for the folder the user chooses. Call these exact tool names using the tool calling format, then report the actual tool result and any failures. Never claim an action occurred without a tool result."),
                                 // Keep the small CPU model responsive; leave Gemma and full Qwen unchanged.
                                 extraContext = if (model.file == "qwen3-06b-compact.litertlm") mapOf("enable_thinking" to false) else emptyMap(),
                                 thinkingConfig = if (model.file == "qwen3-06b-compact.litertlm") ThinkingConfig(enableThinking = false) else null,

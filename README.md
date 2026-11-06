@@ -11,7 +11,7 @@ Emulator sample screens. The model catalog is illustrative.
 | ![Home sample](docs/screenshots/home.png) | ![Chat sample](docs/screenshots/chat.png) | ![Models sample](docs/screenshots/models.png) |
 ## What works so far
 
-QR pairing and chat have been exercised against a gateway. A local LiteRT-LM model called a photo-counting tool in an emulator; image-copy fixtures also passed checks for original preservation and retry deduplication. These checks do not establish that every model, tool, or phone works.
+QR pairing and chat have been exercised against a gateway. An optimized emulator build counted and copied images with a local LiteRT-LM model. The test verified that originals stayed unchanged, copied hashes matched, and repeated sources were skipped. These checks do not establish that every model, tool, or phone works.
 
 The app can display local generation speed and a resource panel. Available resource readings depend on the gateway and device. Local folder tools work within the immediate children of a folder you choose; photo tools access the media visible to the app under Android permissions.
 

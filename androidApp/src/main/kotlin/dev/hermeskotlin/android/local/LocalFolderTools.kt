@@ -23,7 +23,9 @@ class LocalFolderTools(private val context: Context) : ToolSet {
     ) ?: error("Could not access the chosen folder")
 
     @Tool(description = "List immediate children of the selected folder in pages. Use next_offset to continue; entries include IDs for reading text files. Folder changes between pages can change ordering.")
-    fun listSelectedFolder(@ToolParam(description = "Zero-based entry offset; use 0 initially and next_offset for later pages") offset: Int = 0): String = guarded {
+    fun list_selected_folder(@ToolParam(description = "Zero-based entry offset; use 0 initially and next_offset for later pages") offset: Int = 0): String = listSelectedFolder(offset)
+
+    fun listSelectedFolder(offset: Int = 0): String = guarded {
         require(offset in 0..1_000_000) { "Folder offset must be between 0 and 1000000" }
         val items = JSONArray()
         val selected = tree()
@@ -49,10 +51,12 @@ class LocalFolderTools(private val context: Context) : ToolSet {
     }
 
     @Tool(description = "Read a bounded UTF-8 text chunk from an immediate child of the selected folder. Pass next_offset as byte_offset to continue; offsets are bytes, not characters.")
-    fun readSelectedTextFile(
-        @ToolParam(description = "Document ID returned by listSelectedFolder") documentId: String,
-        @ToolParam(description = "Byte offset returned by the preceding chunk; use 0 initially") byteOffset: Int = 0
-    ): String = guarded {
+    fun read_selected_text_file(
+        @ToolParam(description = "Document ID returned by list_selected_folder") document_id: String,
+        @ToolParam(description = "Byte offset returned by the preceding chunk; use 0 initially") byte_offset: Int = 0
+    ): String = readSelectedTextFile(document_id, byte_offset)
+
+    fun readSelectedTextFile(documentId: String, byteOffset: Int = 0): String = guarded {
         require(byteOffset >= 0) { "Byte offset must not be negative" }
         val selected = tree()
         val mime = queryChildren(selected).use { cursor ->

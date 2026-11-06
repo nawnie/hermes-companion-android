@@ -18,6 +18,8 @@ class LocalImageTools(private val context: Context, private val cancelled: Atomi
     private val path = "${Environment.DIRECTORY_PICTURES}/Hermes Collection/"
 
     @Tool(description = "Count images available to Hermes in the phone media library, excluding the Hermes Collection folder. Android permission may limit what is visible.")
+    fun count_phone_images(): String = countPhoneImages()
+
     fun countPhoneImages(): String = guarded {
         require(Build.VERSION.SDK_INT >= 29) { "Image tools require Android 10 or later" }
         var count = 0
@@ -27,6 +29,8 @@ class LocalImageTools(private val context: Context, private val cancelled: Atomi
     }
 
     @Tool(description = "Copy accessible phone images into Pictures/Hermes Collection, keeping originals. Previously copied source versions are skipped. May be called again if incomplete.")
+    fun collect_phone_images(): String = collectPhoneImages()
+
     fun collectPhoneImages(): String = guarded {
         require(Build.VERSION.SDK_INT >= 29) { "Image collection requires Android 10 or later" }
         val destination = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
