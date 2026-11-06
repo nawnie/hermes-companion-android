@@ -10,6 +10,11 @@
 -keep class kotlin.Metadata { *; }
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
 
+# LiteRT-LM 0.19.1 ships no consumer rules. Its native library resolves Kotlin
+# config getters/callbacks by name (including ThinkingConfig.getEnableThinking).
+# Keep the SDK bridge while allowing the rest of the app to be optimized.
+-keep class com.google.ai.edge.litertlm.** { *; }
+
 # Comments on a selection read every text in the selection container by this name (CommentSelection.android.kt).
 -keepclassmembers class androidx.compose.foundation.text.selection.SelectionState {
     public java.util.List getSelectableTexts();
