@@ -1,0 +1,843 @@
+package dev.hermeskotlin.ui.chat
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import dev.hermeskotlin.designsystem.components.ScrollbarBox
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.clearText
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.composables.icons.lucide.Check
+import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.CloudOff
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.GripVertical
+import com.composables.icons.lucide.RefreshCw
+import com.composables.icons.lucide.Search
+import com.composables.icons.lucide.Star
+import com.composeunstyled.Text
+import com.composeunstyled.UnstyledIcon
+import com.composeunstyled.theme.Theme
+import dev.hermeskotlin.core.chat.ChatState
+import dev.hermeskotlin.core.models.ModelCatalog
+import dev.hermeskotlin.core.models.ModelOption
+import dev.hermeskotlin.core.models.PickerModel
+import dev.hermeskotlin.core.models.PickerScope
+import dev.hermeskotlin.core.models.ReasoningEffort
+import dev.hermeskotlin.core.models.displayModelName
+import dev.hermeskotlin.core.models.displayProviderName
+import dev.hermeskotlin.core.models.offersAny
+import dev.hermeskotlin.core.models.pickerModels
+import dev.hermeskotlin.core.models.pickerScope
+import dev.hermeskotlin.core.models.pickerSections
+import dev.hermeskotlin.core.models.starKey
+import dev.hermeskotlin.core.models.toggleStar
+import dev.hermeskotlin.core.models.withStarredRowOrder
+import dev.hermeskotlin.core.models.withRecent
+import dev.hermeskotlin.core.settings.AppSettings
+import dev.hermeskotlin.core.settings.SettingsStore
+import dev.hermeskotlin.designsystem.StarFilled
+import dev.hermeskotlin.designsystem.accent
+import dev.hermeskotlin.designsystem.accentSoft
+import dev.hermeskotlin.designsystem.accentText
+import dev.hermeskotlin.designsystem.body
+import dev.hermeskotlin.designsystem.bodySmall
+import dev.hermeskotlin.designsystem.caption
+import dev.hermeskotlin.designsystem.colors
+import dev.hermeskotlin.designsystem.components.BottomSheet
+import dev.hermeskotlin.designsystem.components.Button
+import dev.hermeskotlin.designsystem.components.ButtonVariant
+import dev.hermeskotlin.designsystem.components.Chip
+import dev.hermeskotlin.designsystem.components.Dialog
+import dev.hermeskotlin.designsystem.components.IconButton
+import dev.hermeskotlin.designsystem.components.Spinner
+import dev.hermeskotlin.designsystem.components.handCursor
+import dev.hermeskotlin.designsystem.components.Switch
+import dev.hermeskotlin.designsystem.components.TextField
+import dev.hermeskotlin.designsystem.danger
+import dev.hermeskotlin.designsystem.code
+import dev.hermeskotlin.designsystem.eyebrow
+import dev.hermeskotlin.designsystem.label
+import dev.hermeskotlin.designsystem.radii
+import dev.hermeskotlin.designsystem.radiusMedium
+import dev.hermeskotlin.designsystem.radiusSmall
+import dev.hermeskotlin.designsystem.radiusXSmall
+import dev.hermeskotlin.designsystem.surface2
+import dev.hermeskotlin.designsystem.surface3
+import dev.hermeskotlin.designsystem.title
+import dev.hermeskotlin.designsystem.warning
+import dev.hermeskotlin.designsystem.warningSoft
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import com.composables.icons.lucide.Zap
+import dev.hermeskotlin.designsystem.stroke
+import dev.hermeskotlin.designsystem.text as textColor
+import dev.hermeskotlin.designsystem.textSecondary
+import dev.hermeskotlin.designsystem.textTertiary
+import dev.hermeskotlin.designsystem.typography
+import dev.hermeskotlin.ui.LocalAppSettings
+import dev.hermeskotlin.ui.arrowFocus
+import dev.hermeskotlin.ui.isDesktop
+import org.koin.compose.koinInject
+import dev.hermeskotlin.ui.resources.*
+import org.jetbrains.compose.resources.stringResource
+
+/** What the composer shows and the sheet marks: the chat's own pick, else the profile default. */
+internal data class ModelSelection(val model: String?, val provider: String?, val option: ModelOption?) {
+    /** [option] is the model in use: the same id, from the same provider when that's known. */
+    fun isCurrent(option: ModelOption): Boolean = option.id == model && (provider == null || option.provider == provider)
+
+    companion object {
+        fun of(state: ChatState, catalog: ModelCatalog?): ModelSelection {
+            val model = state.model ?: catalog?.currentModel
+            val provider = if (state.model != null) state.provider else catalog?.currentProvider
+            return ModelSelection(model, provider, catalog?.find(provider, model))
+        }
+    }
+}
+
+/** The effort a chat runs at, for labels: its own level, else the profile's, else what the gateway defaults to. */
+internal fun ChatState.effort(option: ModelOption?): ReasoningEffort? {
+    if (option != null && !option.reasoning) return null
+    return ReasoningEffort.fromWire(reasoningEffort)
+        ?: (ReasoningEffort.fromWire(profileReasoningEffort) ?: ReasoningEffort.Default).takeIf { option != null }
+}
+
+/**
+ * Model, thinking level and fast mode for the open chat. With [modelOnly] it picks just a model, e.g. a
+ * bot's own, which carries no thinking level or fast mode; [note] says what a pick changes.
+ */
+@Composable
+internal fun ModelSheet(
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    state: ChatState,
+    picker: ModelPickerState,
+    onRefresh: () -> Unit,
+    onSelectModel: (ModelOption) -> Unit,
+    onSelectEffort: (ReasoningEffort) -> Unit,
+    onFast: (Boolean) -> Unit,
+    modelOnly: Boolean = false,
+    note: String? = null,
+    /** Saves stars and recent picks; previews pass their own, since the default writes the device's settings. */
+    onSettings: ((AppSettings) -> AppSettings) -> Unit = settingsUpdater(),
+    /** What the search box and the scope start with, for previews. */
+    initialQuery: String = "",
+    initialScope: PickerScope? = null,
+    /** On the desktop, the button it opens from, in window coordinates: it opens over it as a popover. */
+    anchor: () -> Rect? = { null },
+) {
+    // Taken once per opening: the pill moving under an open popover (the composer folding) doesn't drag it along.
+    // Kept while it closes, so it fades out as the popover it was, not as a centred sheet over a dimmed window.
+    val lastAnchor = remember { arrayOfNulls<Rect>(1) }
+    val anchorRect = remember(visible) { if (visible) anchor() else lastAnchor[0] }
+    lastAnchor[0] = anchorRect
+    val query = rememberTextFieldState(initialQuery)
+    var scope by remember { mutableStateOf(initialScope) }
+    var opened by remember { mutableStateOf(false) }
+    LaunchedEffect(visible) {
+        if (!visible) return@LaunchedEffect
+        onRefresh()
+        // Each time it opens again it starts over, with no leftover search and back on your models. Done on open,
+        // not on close, so the list doesn't change under the sheet while it slides away.
+        if (opened) {
+            query.clearText()
+            scope = null
+        }
+        opened = true
+    }
+    val selection = ModelSelection.of(state, picker.catalog)
+    // A pick joins Recent once the chat (or bot) runs it: not when a confirm is cancelled or the switch fails.
+    var picked by remember { mutableStateOf<ModelOption?>(null) }
+    LaunchedEffect(selection, picked) {
+        val model = picked ?: return@LaunchedEffect
+        if (selection.isCurrent(model)) {
+            onSettings { it.copy(recentModels = it.recentModels.withRecent(model)) }
+            picked = null
+        }
+    }
+
+    BottomSheet(visible = visible, onDismiss = onDismiss, anchor = anchorRect) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = if (note != null) 4.dp else 12.dp),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                stringResource(Res.string.chat_model_title),
+                style = Theme[typography][title],
+                color = Theme[colors][textColor],
+                modifier = Modifier.weight(1f).semantics { heading() },
+            )
+            // A note says what a pick changes (a bot's model is for all its chats), so it doesn't also say this.
+            if (!modelOnly && note == null) {
+                Text(
+                    stringResource(Res.string.chat_model_for_this_chat),
+                    style = Theme[typography][bodySmall].copy(fontSize = 12.5.sp),
+                    color = Theme[colors][textTertiary],
+                    modifier = Modifier.padding(bottom = 3.dp),
+                )
+            }
+        }
+        note?.let {
+            Text(
+                it,
+                style = Theme[typography][bodySmall],
+                color = Theme[colors][textSecondary],
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
+            )
+        }
+        val saveLine = if (picker.saving) stringResource(Res.string.chat_model_saving) else picker.saveError
+        saveLine?.let {
+            Text(
+                it,
+                style = Theme[typography][bodySmall],
+                color = if (picker.saving) Theme[colors][textSecondary] else Theme[colors][danger],
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
+            )
+        }
+        val option = selection.option
+        val efforts = if (modelOnly) emptyList() else ReasoningEffort.choicesFor(option)
+        if (efforts.isNotEmpty()) {
+            Text(
+                stringResource(Res.string.chat_model_thinking),
+                style = Theme[typography][label],
+                color = Theme[colors][textSecondary],
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 2.dp, bottom = 8.dp).semantics { heading() },
+            )
+            val current = state.effort(option)
+            val chips = rememberLazyListState()
+            // Seven or eight levels don't fit across a phone as a segmented control, so they scroll as chips:
+            // bring the chat's level into view, with its neighbour peeking.
+            LaunchedEffect(visible, current, efforts) {
+                // A desktop wraps the chips, so there's nothing to scroll.
+                if (visible && !isDesktop) chips.scrollToItem((efforts.indexOf(current) - 1).coerceAtLeast(0))
+            }
+            ChipRow(efforts, state = chips, key = { it.wire }) { effort ->
+                Chip(effortLabel(effort), selected = effort == current, onClick = { onSelectEffort(effort) })
+            }
+        }
+        if (option?.fast == true && !modelOnly) {
+            FastModeCard(state.fast == true, onFast, Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp))
+        }
+        if (efforts.isNotEmpty() || (option?.fast == true && !modelOnly)) {
+            // A hairline after the chat's settings, so the model chips below don't read as more thinking levels.
+            Box(Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp).fillMaxWidth().height(1.dp).background(Theme[colors][stroke]))
+        }
+
+        val catalog = picker.catalog
+        when {
+            catalog == null && picker.loading -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { Spinner() }
+            catalog == null -> Column(
+                Modifier.fillMaxWidth().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                UnstyledIcon(Lucide.CloudOff, contentDescription = null, tint = Theme[colors][textTertiary], modifier = Modifier.size(24.dp))
+                Text(picker.error?.ifEmpty { null } ?: stringResource(Res.string.chat_model_load_failed), style = Theme[typography][bodySmall], color = Theme[colors][textSecondary])
+                Button(stringResource(Res.string.chat_try_again), onClick = onRefresh, variant = ButtonVariant.Secondary, leadingIcon = Lucide.RefreshCw)
+            }
+            else -> ModelList(
+                catalog = catalog,
+                selection = selection,
+                query = query,
+                chosen = scope,
+                onChoose = { scope = it },
+                onPick = { model ->
+                    picked = model
+                    onSelectModel(model)
+                },
+                onSettings = onSettings,
+            )
+        }
+    }
+}
+
+/**
+ * The models to pick from. It opens on yours (starred and recent) once there are any, with chips to see all of
+ * them or one provider's; a search looks through every model in the chosen provider, or all of them.
+ */
+@Composable
+private fun ColumnScope.ModelList(
+    catalog: ModelCatalog,
+    selection: ModelSelection,
+    query: TextFieldState,
+    /** The scope chosen with the chips, null for the default. */
+    chosen: PickerScope?,
+    onChoose: (PickerScope) -> Unit,
+    onPick: (ModelOption) -> Unit,
+    onSettings: ((AppSettings) -> AppSettings) -> Unit,
+) {
+    val settings = LocalAppSettings.current
+    val starred = settings.starredModels
+    val starredOrder = remember { mutableStateListOf<String>().apply { addAll(starred) } }
+    var dragStartOrder by remember { mutableStateOf<List<String>?>(null) }
+    LaunchedEffect(starred) {
+        starredOrder.clear()
+        starredOrder.addAll(starred)
+    }
+    val recent = settings.recentModels
+    val hasYours = remember(catalog, starred, recent) { catalog.offersAny(starred + recent) }
+    val needle = query.text.toString().trim()
+    val scope = pickerScope(chosen, hasYours, searching = needle.isNotEmpty())
+    val current = selection.option?.starKey
+    val shownStarred = if (scope == PickerScope.Yours && needle.isEmpty()) starredOrder.toList() else starred
+    val sections = remember(catalog, needle, scope, shownStarred, recent, current) {
+        catalog.pickerSections(needle, scope, shownStarred, recent, current)
+    }
+    val starredRowKeys = remember(catalog, shownStarred) {
+        catalog.pickerSections("", PickerScope.Yours, shownStarred)
+            .firstOrNull { it.title == "Starred" }
+            ?.models
+            ?.mapNotNull { row -> row.variants.firstOrNull { it.starKey in shownStarred }?.starKey }
+            .orEmpty()
+    }
+    val latestStarredRowKeys by rememberUpdatedState(starredRowKeys)
+    val providerNames = remember(catalog) { catalog.providers.associate { it.slug to displayProviderName(it.slug, it.name) } }
+    val allCount = remember(catalog) { catalog.pickerModels().size }
+
+    val searchable = catalog.providers.sumOf { it.models.size } > SEARCH_THRESHOLD
+    val focus = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    if (searchable) {
+        // With a keyboard, the picker opens ready for a model's name to be typed, and Enter takes the best match.
+        if (isDesktop) LaunchedEffect(Unit) { focus.requestFocus() }
+        TextField(
+            state = query,
+            placeholder = stringResource(Res.string.chat_model_search),
+            leadingIcon = Lucide.Search,
+            clearable = true,
+            focusRequester = focus,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp).onPreviewKeyEvent { event ->
+                if (!isDesktop) return@onPreviewKeyEvent false
+                // Down steps from the search into the list, to pick with the arrows and Enter.
+                if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
+                    focusManager.moveFocus(FocusDirection.Down)
+                    return@onPreviewKeyEvent true
+                }
+                val enter = event.type == KeyEventType.KeyDown && (event.key == Key.Enter || event.key == Key.NumPadEnter)
+                val best = sections.firstNotNullOfOrNull { it.models.firstOrNull() }.takeIf { enter && needle.isNotEmpty() }
+                best?.let { onPick(it.preferred(selection.provider, selection.model, starred, recent)) }
+                best != null
+            },
+        )
+    }
+    val yours = stringResource(Res.string.chat_model_yours)
+    val all = stringResource(Res.string.chat_model_all)
+    val scopes = buildList {
+        if (hasYours) add(PickerScope.Yours to yours)
+        add(PickerScope.All to all)
+        if (catalog.providers.size > 1) catalog.providers.forEach { add(PickerScope.Provider(it.slug) to providerNames.getValue(it.slug)) }
+    }
+    if (scopes.size > 1) {
+        // Down from a chip goes on to the models, Up back to the search.
+        ChipRow(scopes, Modifier.padding(top = 12.dp).arrowFocus()) { (option, title) ->
+            Chip(
+                title,
+                selected = option == scope,
+                onClick = {
+                    // Your models aren't searched, so going back to them leaves the search.
+                    if (option == PickerScope.Yours) query.clearText()
+                    onChoose(option)
+                    // The keys stay in the search: a click on a chip doesn't leave typing going nowhere.
+                    if (isDesktop && searchable) runCatching { focus.requestFocus() }
+                },
+            )
+        }
+    }
+
+    val list = rememberLazyListState()
+    // A new search or scope starts at the top, where its best matches are.
+    LaunchedEffect(needle, scope) { list.scrollToItem(0) }
+    val repeatedNames = remember(sections) { sections.flatMap { it.models }.groupingBy { it.name }.eachCount().filterValues { it > 1 }.keys }
+    // A desktop's popover can have less room than the list wants: the list gives way, not what's above it.
+    ScrollbarBox(list, Modifier.fillMaxWidth().then(if (isDesktop) Modifier.weight(1f, fill = false) else Modifier).padding(top = 4.dp)) {
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 440.dp).arrowFocus(), state = list) {
+            sections.forEachIndexed { index, section ->
+                section.title?.let { title -> item(key = "h$index") { SectionLabel(sectionTitle(title)) } }
+                items(section.models, key = { "$index-${it.variants.first().starKey}" }) { row ->
+                    val pick = row.preferred(selection.provider, selection.model, shownStarred, recent)
+                    val reorderKey = row.variants.firstOrNull { it.starKey in shownStarred }?.starKey
+                    val reorderable = scope == PickerScope.Yours && needle.isEmpty() && section.title == "Starred" && reorderKey != null
+                    ModelRow(
+                        row = row,
+                        selection = selection,
+                        starred = row.isStarred(shownStarred),
+                        // Which provider a model comes from matters once there's more than one, unless one is chosen.
+                        providerNames = providerNames.takeIf { catalog.providers.size > 1 && scope !is PickerScope.Provider },
+                        // Two rows with the same name need their ids to tell them apart.
+                        showId = row.name in repeatedNames,
+                        onClick = { onPick(pick) },
+                        onPickVariant = onPick,
+                        reorderKey = reorderKey.takeIf { reorderable },
+                        onReorderStart = { dragStartOrder = starredOrder.toList() },
+                        onReorder = { direction ->
+                            val keys = latestStarredRowKeys
+                            val from = keys.indexOf(reorderKey)
+                            val to = from + direction
+                            if (from >= 0 && to in keys.indices) {
+                                val reordered = keys.toMutableList().apply { add(to, removeAt(from)) }
+                                val previousOrder = starredOrder.toList()
+                                starredOrder.clear()
+                                starredOrder.addAll(previousOrder.withStarredRowOrder(reordered))
+                            }
+                        },
+                        onReorderFinished = { commit ->
+                            val original = dragStartOrder
+                            if (commit) {
+                                onSettings { it.copy(starredModels = starredOrder.toList().withStarredRowOrder(latestStarredRowKeys)) }
+                            } else if (original != null) {
+                                starredOrder.clear()
+                                starredOrder.addAll(original)
+                            }
+                            dragStartOrder = null
+                        },
+                        onToggleStar = {
+                            // Stay where you are: a first star shouldn't swap the list you're browsing for yours.
+                            if (chosen == null) onChoose(scope)
+                            onSettings { it.copy(starredModels = it.starredModels.toggleStar(row, pick)) }
+                        },
+                    )
+                }
+            }
+            if (scope == PickerScope.Yours) {
+                item(key = "all") { BrowseAllRow(allCount, onClick = { onChoose(PickerScope.All) }) }
+            }
+            if (sections.isEmpty()) {
+                item(key = "empty") {
+                    Text(
+                        if (needle.isEmpty()) stringResource(Res.string.chat_model_none) else stringResource(Res.string.chat_model_no_match, needle),
+                        style = Theme[typography][bodySmall],
+                        color = Theme[colors][textTertiary],
+                        modifier = Modifier.padding(20.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Chips in a line: on a phone the line scrolls across under a finger. A desktop's wheel only scrolls down, so there
+ * the chips wrap onto more lines and none is ever out of reach.
+ */
+@Composable
+private fun <T> ChipRow(
+    items: List<T>,
+    modifier: Modifier = Modifier,
+    state: LazyListState = rememberLazyListState(),
+    key: ((T) -> Any)? = null,
+    chip: @Composable (T) -> Unit,
+) {
+    if (isDesktop) {
+        FlowRow(
+            modifier.fillMaxWidth().padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) { items.forEach { chip(it) } }
+    } else {
+        LazyRow(
+            state = state,
+            modifier = modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(items, key = key) { chip(it) }
+        }
+    }
+}
+
+/** Writes the device's settings. */
+@Composable
+private fun settingsUpdater(): ((AppSettings) -> AppSettings) -> Unit {
+    val settings = koinInject<SettingsStore>()
+    return remember(settings) { settings::update }
+}
+
+/** A list's section, in small caps; read as its own words, not spelled out. */
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text.uppercase(),
+        style = Theme[typography][eyebrow],
+        color = Theme[colors][textTertiary],
+        modifier = Modifier
+            .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 6.dp)
+            .semantics {
+                heading()
+                contentDescription = text
+            },
+    )
+}
+
+/** Fast mode on a raised card: a bolt on a warm tile, what it does, and its switch. The whole card toggles it. */
+@Composable
+private fun FastModeCard(on: Boolean, onFast: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(Theme[radii][radiusMedium])
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(Theme[colors][surface2])
+            .handCursor()
+            .toggleable(value = on, role = Role.Switch, onValueChange = onFast)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(32.dp).background(Theme[colors][warningSoft], RoundedCornerShape(Theme[radii][radiusSmall])),
+            contentAlignment = Alignment.Center,
+        ) {
+            UnstyledIcon(Lucide.Zap, contentDescription = null, tint = Theme[colors][warning], modifier = Modifier.size(15.dp))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(stringResource(Res.string.chat_model_fast), style = Theme[typography][body].copy(fontSize = 15.sp), color = Theme[colors][textColor])
+            Text(stringResource(Res.string.chat_model_fast_detail), style = Theme[typography][caption].copy(fontSize = 12.5.sp), color = Theme[colors][textTertiary])
+        }
+        Switch(on)
+    }
+}
+
+/**
+ * One model. A tap picks it from [PickerModel.preferred]'s provider; when several providers offer it, a pill per
+ * provider (with its price) picks that one. The star, or a long press, stars it.
+ */
+@Composable
+private fun ModelRow(
+    row: PickerModel,
+    selection: ModelSelection,
+    starred: Boolean,
+    providerNames: Map<String, String>?,
+    showId: Boolean,
+    onClick: () -> Unit,
+    onPickVariant: (ModelOption) -> Unit,
+    reorderKey: String? = null,
+    onReorderStart: () -> Unit = {},
+    onReorder: (Int) -> Unit = {},
+    onReorderFinished: (Boolean) -> Unit = {},
+    onToggleStar: () -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    val currentReorder by rememberUpdatedState(onReorder)
+    val currentReorderStart by rememberUpdatedState(onReorderStart)
+    val currentReorderFinished by rememberUpdatedState(onReorderFinished)
+    val dragLabel = reorderKey?.let { stringResource(Res.string.chat_model_drag_to_reorder, row.name) }
+    var rowHeight by remember { mutableStateOf(1f) }
+    var dragOffset by remember { mutableStateOf(0f) }
+    val selected = row.variants.any(selection::isCurrent)
+    val single = row.variants.singleOrNull()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .onSizeChanged { rowHeight = it.height.toFloat().coerceAtLeast(1f) }
+            .padding(horizontal = 8.dp)
+            .clip(RoundedCornerShape(Theme[radii][radiusMedium]))
+            .background(if (selected) Theme[colors][accentSoft] else Color.Transparent)
+            .handCursor()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onToggleStar()
+                },
+                onLongClickLabel = stringResource(if (starred) Res.string.chat_model_unstar else Res.string.chat_model_star),
+            )
+            .semantics { this.selected = selected }
+            .padding(start = 12.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (reorderKey != null) {
+            Box(
+                Modifier
+                    .size(28.dp)
+                    .handCursor()
+                    .pointerInput(reorderKey) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            // This dedicated handle owns the press before the row's long-press
+                            // recognizer can interpret it as an unstar action.
+                            down.consume()
+                            dragOffset = 0f
+                            currentReorderStart()
+                            var commit = true
+                            var completedNormally = false
+                            try {
+                                while (true) {
+                                    // We consumed the down in Initial. Read the next event at that
+                                    // same pass so Main-pass delivery of the original down cannot
+                                    // be mistaken for another handler cancelling the drag.
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                    if (change == null) {
+                                        commit = false
+                                        break
+                                    }
+                                    if (event.type == PointerEventType.Press) continue
+                                    // Another pointer handler taking a move means this drag was
+                                    // cancelled; do not save its partial order.
+                                    if (change.isConsumed) {
+                                        commit = false
+                                        break
+                                    }
+                                    dragOffset += change.position.y - change.previousPosition.y
+                                    change.consume()
+                                    val threshold = rowHeight / 2f
+                                    if (dragOffset >= threshold) {
+                                        currentReorder(1)
+                                        dragOffset -= rowHeight
+                                    } else if (dragOffset <= -threshold) {
+                                        currentReorder(-1)
+                                        dragOffset += rowHeight
+                                    }
+                                    if (!change.pressed) break
+                                }
+                                completedNormally = true
+                            } finally {
+                                dragOffset = 0f
+                                currentReorderFinished(commit && completedNormally)
+                            }
+                        }
+                    }
+                    .semantics { contentDescription = dragLabel.orEmpty() },
+                contentAlignment = Alignment.Center,
+            ) {
+                UnstyledIcon(Lucide.GripVertical, contentDescription = null, tint = Theme[colors][textTertiary], modifier = Modifier.size(18.dp))
+            }
+        }
+        // The model's initial on a tile, so the list scans by shape before it's read.
+        Box(
+            Modifier.size(34.dp).background(Theme[colors][surface3], RoundedCornerShape(Theme[radii][radiusSmall])),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                row.name.firstOrNull { it.isLetterOrDigit() }?.uppercase().orEmpty(),
+                style = Theme[typography][label].copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
+                color = Theme[colors][textSecondary],
+                modifier = Modifier.clearAndSetSemantics { },
+            )
+        }
+        Column(Modifier.weight(1f).padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                row.name,
+                style = Theme[typography][body].copy(fontSize = 15.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal),
+                color = Theme[colors][textColor],
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val details = listOfNotNull(
+                single?.provider?.let { providerNames?.get(it) },
+                row.variants.first().id.takeIf { showId && displayModelName(it) != it },
+            ).joinToString(" · ")
+            val price = single?.price
+            if (details.isNotEmpty() || price != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (details.isNotEmpty()) {
+                        Text(
+                            details,
+                            style = Theme[typography][caption].copy(fontSize = 12.sp),
+                            color = Theme[colors][textTertiary],
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                    }
+                    // Both give way at large text, so neither pushes the other out of the row.
+                    if (price != null) PriceTag(price, Modifier.weight(1f, fill = false))
+                }
+            }
+            if (single == null) {
+                val pills: @Composable () -> Unit = {
+                    row.variants.forEach { variant ->
+                        ProviderPill(
+                            text = listOfNotNull(providerNames?.get(variant.provider) ?: displayProviderName(variant.provider), variant.price).joinToString(" · "),
+                            selected = selection.isCurrent(variant),
+                            onClick = { onPickVariant(variant) },
+                        )
+                    }
+                }
+                // As the chips above: a desktop's wheel can't scroll a line sideways, so there the pills wrap.
+                if (isDesktop) {
+                    FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { pills() }
+                } else {
+                    Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) { pills() }
+                }
+            }
+        }
+        // The row says it's selected; the check only shows it.
+        if (selected) UnstyledIcon(Lucide.Check, contentDescription = null, tint = Theme[colors][accentText], modifier = Modifier.size(18.dp))
+        IconButton(
+            icon = if (starred) StarFilled else Lucide.Star,
+            contentDescription = stringResource(if (starred) Res.string.chat_model_unstar_named else Res.string.chat_model_star_named, row.name),
+            onClick = onToggleStar,
+            tint = if (starred) Theme[colors][accentText] else Theme[colors][textTertiary],
+            iconSize = 18.dp,
+        )
+    }
+}
+
+/** A provider offering the model of a row: picks the model from that provider. */
+@Composable
+private fun ProviderPill(text: String, selected: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(Theme[radii][radiusSmall])
+    Box(
+        Modifier
+            .height(26.dp)
+            .background(if (selected) Theme[colors][accentSoft] else Color.Transparent, shape)
+            .border(1.dp, if (selected) Color.Transparent else Theme[colors][stroke], shape)
+            .handCursor()
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            style = Theme[typography][caption],
+            color = if (selected) Theme[colors][accentText] else Theme[colors][textSecondary],
+            maxLines = 1,
+        )
+    }
+}
+
+/** A model's price per million tokens, in mono on a small raised tag. */
+@Composable
+private fun PriceTag(price: String, modifier: Modifier = Modifier) {
+    Text(
+        price,
+        style = Theme[typography][code].copy(fontSize = 10.5.sp),
+        color = Theme[colors][textSecondary],
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+            .background(Theme[colors][surface3], RoundedCornerShape(Theme[radii][radiusXSmall]))
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+    )
+}
+
+/** Leaves your models for the whole catalog. */
+@Composable
+private fun BrowseAllRow(count: Int, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp)
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(Theme[radii][radiusMedium]))
+            .handCursor()
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(Res.string.chat_model_all_models),
+            style = Theme[typography][body].copy(fontSize = 14.5.sp, fontWeight = FontWeight.Medium),
+            color = Theme[colors][accentText],
+            modifier = Modifier.weight(1f),
+        )
+        Text("$count", style = Theme[typography][code].copy(fontSize = 12.sp), color = Theme[colors][textTertiary])
+        UnstyledIcon(Lucide.ChevronRight, contentDescription = null, tint = Theme[colors][accentText], modifier = Modifier.size(15.dp))
+    }
+}
+
+/** The gateway asks before switching to an expensive model. */
+@Composable
+internal fun ModelConfirmDialog(pending: PendingSwitch?, onConfirm: (ModelOption) -> Unit, onDismiss: () -> Unit) {
+    Dialog(
+        visible = pending != null,
+        onDismissRequest = onDismiss,
+        title = stringResource(Res.string.chat_model_switch_title, pending?.model?.id?.let(::displayModelName).orEmpty()),
+        message = pending?.message,
+        actions = {
+            Button(stringResource(Res.string.common_cancel), onClick = onDismiss, variant = ButtonVariant.Ghost)
+            Button(stringResource(Res.string.chat_model_switch), onClick = { pending?.let { onConfirm(it.model) } })
+        },
+    )
+}
+
+/** A thinking level's name, as the chips and the composer's model pill show it. */
+@Composable
+internal fun effortLabel(effort: ReasoningEffort): String = stringResource(
+    when (effort) {
+        ReasoningEffort.Off -> Res.string.chat_effort_off
+        ReasoningEffort.Minimal -> Res.string.chat_effort_minimal
+        ReasoningEffort.Low -> Res.string.chat_effort_low
+        ReasoningEffort.Medium -> Res.string.chat_effort_medium
+        ReasoningEffort.High -> Res.string.chat_effort_high
+        ReasoningEffort.XHigh -> Res.string.chat_effort_xhigh
+        ReasoningEffort.Max -> Res.string.chat_effort_max
+        ReasoningEffort.Ultra -> Res.string.chat_effort_ultra
+    },
+)
+
+/** A heading core's model picker names in English ("Starred", "From OpenAI"), in the app's language. */
+@Composable
+private fun sectionTitle(title: String): String = when {
+    title == "Starred" -> stringResource(Res.string.chat_model_starred)
+    title == "Recent" -> stringResource(Res.string.chat_model_recent)
+    title == "Models" -> stringResource(Res.string.chat_model_models)
+    title.startsWith("From ") -> stringResource(Res.string.chat_model_from, title.removePrefix("From "))
+    else -> title
+}
+
+private const val SEARCH_THRESHOLD = 12

@@ -1,0 +1,396 @@
+"""Tests for hermes_mobile.device_store — pure-stdlib device registry.
+
+Run from the repo root:
+    PYTHONPATH=/path/to/hermes-agent python -m pytest tests/ -x -q
+(the store itself has no hermes imports; PYTHONPATH is needed for the
+auth-provider tests in this suite's sibling module).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+
+import pytest
+
+from hermes_mobile.device_store import (
+    ACCESS_TTL_SECONDS,
+    REFRESH_TTL_SECONDS,
+    DeviceStore,
+    ExpiredRefreshTokenError,
+    RefreshTokenError,
+    ReusedRefreshTokenError,
+    UnknownRefreshTokenError,
+)
+
+
+class FakeClock:
+    def __init__(self, t: int = 1_750_000_000) -> None:
+        self.t = t
+
+    def __call__(self) -> float:
+        return float(self.t)
+
+    def advance(self, seconds: int) -> None:
+        self.t += seconds
+
+
+@pytest.fixture
+def clock() -> FakeClock:
+    return FakeClock()
+
+
+@pytest.fixture
+def store_path(tmp_path):
+    return tmp_path / "mobile" / "devices.json"
+
+
+@pytest.fixture
+def store(store_path, clock) -> DeviceStore:
+    return DeviceStore(path=store_path, clock=clock)
+
+
+# ---------------------------------------------------------------------------
+# create_device / list_devices
+# ---------------------------------------------------------------------------
+
+
+def test_create_device_returns_id_and_refresh_token(store):
+    device_id, refresh_token = store.create_device("Gianluca's iPhone")
+    assert device_id
+    assert refresh_token
+    # token_urlsafe(32) yields ~43 chars; require meaningful entropy.
+    assert len(refresh_token) >= 40
+
+
+def test_create_device_ids_and_tokens_are_unique(store):
+    pairs = [store.create_device(f"dev{i}") for i in range(5)]
+    ids = {p[0] for p in pairs}
+    tokens = {p[1] for p in pairs}
+    assert len(ids) == 5
+    assert len(tokens) == 5
+
+
+def test_tokens_stored_as_sha256_hashes_only(store, store_path):
+    device_id, refresh_token = store.create_device("phone")
+    raw = store_path.read_text()
+    assert refresh_token not in raw
+    expected_hash = hashlib.sha256(refresh_token.encode("utf-8")).hexdigest()
+    assert expected_hash in raw
+    # sanity: the file is JSON with our device in it
+    data = json.loads(raw)
+    assert device_id in data["devices"]
+
+
+def test_access_tokens_stored_hashed_only(store, store_path):
+    _, rt = store.create_device("phone")
+    access_token, new_rt, _ = store.rotate_refresh(rt)
+    raw = store_path.read_text()
+    assert access_token not in raw
+    assert new_rt not in raw
+    assert hashlib.sha256(access_token.encode()).hexdigest() in raw
+
+
+def test_list_devices(store, clock):
+    id1, _ = store.create_device("phone")
+    id2, _ = store.create_device("tablet")
+    devices = store.list_devices()
+    by_id = {d["device_id"]: d for d in devices}
+    assert set(by_id) == {id1, id2}
+    assert by_id[id1]["name"] == "phone"
+    assert by_id[id2]["name"] == "tablet"
+    assert by_id[id1]["created_at"] == int(clock.t)
+    assert by_id[id1]["revoked"] is False
+
+
+def test_devices_file_is_owner_only(store, store_path):
+    store.create_device("phone")
+    mode = store_path.stat().st_mode & 0o777
+    assert mode & 0o077 == 0, f"devices.json is group/world accessible: {oct(mode)}"
+
+
+# ---------------------------------------------------------------------------
+# rotate_refresh
+# ---------------------------------------------------------------------------
+
+
+def test_rotate_refresh_returns_new_tokens_and_expiry(store, clock):
+    _, rt = store.create_device("phone")
+    access_token, new_rt, expires_at = store.rotate_refresh(rt)
+    assert access_token and new_rt
+    assert new_rt != rt
+    assert expires_at == int(clock.t) + ACCESS_TTL_SECONDS
+
+
+def test_rotate_refresh_unknown_token_raises(store):
+    store.create_device("phone")
+    with pytest.raises(UnknownRefreshTokenError):
+        store.rotate_refresh("not-a-real-token")
+
+
+def test_rotate_refresh_expired_rt_raises(store, clock):
+    _, rt = store.create_device("phone")
+    clock.advance(REFRESH_TTL_SECONDS + 1)
+    with pytest.raises(ExpiredRefreshTokenError):
+        store.rotate_refresh(rt)
+
+
+def test_rotation_extends_refresh_window(store, clock):
+    _, rt = store.create_device("phone")
+    clock.advance(REFRESH_TTL_SECONDS - 60)
+    _, rt2, _ = store.rotate_refresh(rt)
+    # The new RT lives a fresh 30 days from rotation time.
+    clock.advance(REFRESH_TTL_SECONDS - 60)
+    at, _, _ = store.rotate_refresh(rt2)
+    assert store.verify_access(at) is not None
+
+
+# ---------------------------------------------------------------------------
+# reuse detection
+# ---------------------------------------------------------------------------
+
+
+def test_refresh_token_reuse_revokes_device(store):
+    device_id, rt1 = store.create_device("phone")
+    at, rt2, _ = store.rotate_refresh(rt1)  # rt1 -> rt2
+    _, rt3, _ = store.rotate_refresh(rt2)  # rt2 -> rt3; rt1 is now two behind
+    # Replaying a rotated-out RT older than the immediate prior is reuse → revoke.
+    with pytest.raises(ReusedRefreshTokenError):
+        store.rotate_refresh(rt1)
+    (dev,) = store.list_devices()
+    assert dev["revoked"] is True
+    # The current RT and AT are dead too.
+    with pytest.raises(RefreshTokenError):
+        store.rotate_refresh(rt3)
+    assert store.verify_access(at) is None
+
+
+def test_reuse_error_carries_device_id(store):
+    device_id, rt1 = store.create_device("phone")
+    _, rt2, _ = store.rotate_refresh(rt1)
+    store.rotate_refresh(rt2)  # rt1 is now two behind
+    with pytest.raises(ReusedRefreshTokenError) as excinfo:
+        store.rotate_refresh(rt1)
+    assert excinfo.value.device_id == device_id
+
+
+# ---------------------------------------------------------------------------
+# reuse detection — distance-based one-behind tolerance
+# ---------------------------------------------------------------------------
+
+
+def test_immediate_prev_replay_rerotates(store):
+    # Replaying the immediately-prior RT — a duplicate/retried request, or a
+    # resend that raced the rotation response — re-rotates instead of revoking.
+    # The client is exactly one rotation behind, not an attacker.
+    _, rt1 = store.create_device("phone")
+    _, rt2, _ = store.rotate_refresh(rt1)
+    at3, rt3, _ = store.rotate_refresh(rt1)  # replay the immediate-prior rt1
+    assert rt3 and rt3 != rt2
+    assert store.verify_access(at3) is not None
+    (dev,) = store.list_devices()
+    assert dev["revoked"] is False
+
+
+def test_immediate_prev_replay_rerotates_after_long_idle(store, clock):
+    # Distance-based, not time-based: a phone that resumes from background hours
+    # later and replays the immediately-prior RT (it never durably received the
+    # last rotation) must still self-heal — re-rotate, not revoke.
+    _, rt1 = store.create_device("phone")
+    _, rt2, _ = store.rotate_refresh(rt1)
+    clock.advance(6 * 60 * 60)  # 6 hours idle
+    at3, rt3, _ = store.rotate_refresh(rt1)  # immediate-prior replay, long after
+    assert rt3 and rt3 != rt2
+    assert store.verify_access(at3) is not None
+    (dev,) = store.list_devices()
+    assert dev["revoked"] is False
+
+
+def test_older_prev_replay_revokes(store):
+    # Only the *immediately* prior RT is forgiven. Replaying an older rotated-out
+    # RT (two+ rotations back) is genuine reuse and revokes the device.
+    _, rt1 = store.create_device("phone")
+    _, rt2, _ = store.rotate_refresh(rt1)
+    store.rotate_refresh(rt2)  # rt1 is now prev[1], not the immediate prior
+    with pytest.raises(ReusedRefreshTokenError):
+        store.rotate_refresh(rt1)
+    (dev,) = store.list_devices()
+    assert dev["revoked"] is True
+
+
+# ---------------------------------------------------------------------------
+# verify_access
+# ---------------------------------------------------------------------------
+
+
+def test_verify_access_returns_device_record(store):
+    device_id, rt = store.create_device("phone")
+    at, _, expires_at = store.rotate_refresh(rt)
+    record = store.verify_access(at)
+    assert record is not None
+    assert record["device_id"] == device_id
+    assert record["name"] == "phone"
+    assert record["access_expires_at"] == expires_at
+
+
+def test_verify_access_unknown_token_returns_none(store):
+    store.create_device("phone")
+    assert store.verify_access("garbage") is None
+    assert store.verify_access("") is None
+
+
+def test_verify_access_expired_token_returns_none(store, clock):
+    _, rt = store.create_device("phone")
+    at, _, _ = store.rotate_refresh(rt)
+    clock.advance(ACCESS_TTL_SECONDS + 1)
+    assert store.verify_access(at) is None
+
+
+def test_verify_access_before_first_rotation_returns_none(store):
+    # create_device mints no access token; nothing should verify.
+    _, rt = store.create_device("phone")
+    assert store.verify_access(rt) is None
+
+
+def test_rotation_invalidates_previous_access_token(store):
+    _, rt = store.create_device("phone")
+    at1, rt2, _ = store.rotate_refresh(rt)
+    at2, _, _ = store.rotate_refresh(rt2)
+    assert store.verify_access(at1) is None
+    assert store.verify_access(at2) is not None
+
+
+# ---------------------------------------------------------------------------
+# revoke
+# ---------------------------------------------------------------------------
+
+
+def test_revoke_kills_access_and_refresh(store):
+    device_id, rt = store.create_device("phone")
+    at, rt2, _ = store.rotate_refresh(rt)
+    store.revoke(device_id)
+    assert store.verify_access(at) is None
+    with pytest.raises(RefreshTokenError):
+        store.rotate_refresh(rt2)
+    (dev,) = store.list_devices()
+    assert dev["revoked"] is True
+
+
+def test_revoke_unknown_device_is_noop(store):
+    store.revoke("no-such-device")  # must not raise
+    assert store.list_devices() == []
+
+
+def test_revoke_by_refresh(store):
+    device_id, rt = store.create_device("phone")
+    assert store.revoke_by_refresh(rt) is True
+    (dev,) = store.list_devices()
+    assert dev["revoked"] is True
+    assert store.revoke_by_refresh("garbage") is False
+
+
+def test_revoke_by_refresh_matches_rotated_out_token(store):
+    _, rt1 = store.create_device("phone")
+    store.rotate_refresh(rt1)
+    # Best-effort logout with a stale RT should still find the device.
+    assert store.revoke_by_refresh(rt1) is True
+
+
+# ---------------------------------------------------------------------------
+# persistence
+# ---------------------------------------------------------------------------
+
+
+def test_state_persists_across_store_instances(store_path, clock):
+    store1 = DeviceStore(path=store_path, clock=clock)
+    device_id, rt = store1.create_device("phone")
+    at, rt2, _ = store1.rotate_refresh(rt)
+
+    store2 = DeviceStore(path=store_path, clock=clock)
+    record = store2.verify_access(at)
+    assert record is not None and record["device_id"] == device_id
+    # Reuse detection survives reload too: rotate once more so `rt` is two
+    # behind, then replaying it from a fresh instance still revokes.
+    _, rt3, _ = store2.rotate_refresh(rt2)  # rt2 -> rt3; rt now two behind
+    store3 = DeviceStore(path=store_path, clock=clock)
+    with pytest.raises(ReusedRefreshTokenError):
+        store3.rotate_refresh(rt)
+
+
+def test_missing_file_means_empty_store(store_path, clock):
+    store = DeviceStore(path=store_path, clock=clock)
+    assert store.list_devices() == []
+    assert store.verify_access("anything") is None
+
+
+# ---------------------------------------------------------------------------
+# atomic write (spec §9.1: unique tmp per write)
+# ---------------------------------------------------------------------------
+
+
+def test_save_uses_a_unique_tmp_file_per_write(store, store_path, monkeypatch):
+    import os
+    from pathlib import Path
+
+    import hermes_mobile.device_store as ds
+
+    seen = []
+    real_replace = ds.os.replace
+
+    def spy(src, dst):
+        seen.append(Path(src))
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(ds.os, "replace", spy)
+    store.create_device("a")
+    store.create_device("b")
+    assert len(seen) == 2
+    assert seen[0] != seen[1]
+    for p in seen:
+        assert p.parent == store_path.parent
+        assert p.name.startswith(".devices.json.") and p.name.endswith(".tmp")
+        assert p.name != f".devices.json.{os.getpid()}.tmp"
+    assert [
+        p.name for p in store_path.parent.iterdir() if p.name.endswith(".tmp")
+    ] == []
+
+
+def test_save_fsyncs_before_replace(store, monkeypatch):
+    import hermes_mobile.device_store as ds
+
+    events = []
+    real_fsync, real_replace = ds.os.fsync, ds.os.replace
+
+    def fsync(fd):
+        events.append("fsync")
+        return real_fsync(fd)
+
+    def replace(src, dst):
+        events.append("replace")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(ds.os, "fsync", fsync)
+    monkeypatch.setattr(ds.os, "replace", replace)
+    store.create_device("phone")
+    assert "fsync" in events
+    assert events.index("fsync") < events.index("replace")
+
+
+def test_failed_write_keeps_previous_file_and_leaves_no_tmp(
+    store, store_path, monkeypatch
+):
+    import hermes_mobile.device_store as ds
+
+    store.create_device("first")
+    before = store_path.read_text()
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(ds.json, "dump", boom)
+    with pytest.raises(RuntimeError, match="disk full"):
+        store.create_device("second")
+    assert store_path.read_text() == before
+    assert [
+        p.name for p in store_path.parent.iterdir() if p.name.endswith(".tmp")
+    ] == []

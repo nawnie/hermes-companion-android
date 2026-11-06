@@ -1,0 +1,103 @@
+package dev.hermeskotlin.ui.rooms
+
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.text.input.ImeAction
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Pencil
+import com.composables.icons.lucide.Trash2
+import com.composeunstyled.DropdownMenuPanelScope
+import dev.hermeskotlin.core.rooms.Room
+import dev.hermeskotlin.designsystem.components.Button
+import dev.hermeskotlin.designsystem.components.ButtonSize
+import dev.hermeskotlin.designsystem.components.ButtonVariant
+import dev.hermeskotlin.designsystem.components.Dialog
+import dev.hermeskotlin.designsystem.components.MenuAction
+import dev.hermeskotlin.designsystem.components.TextField
+import dev.hermeskotlin.ui.isDesktop
+import dev.hermeskotlin.ui.sessions.resetTo
+import dev.hermeskotlin.ui.resources.*
+import org.jetbrains.compose.resources.stringResource
+
+/** A room's actions, the same wherever its menu opens: its row in the sidebar or its own top bar. */
+@Composable
+internal fun DropdownMenuPanelScope.RoomMenuActions(onRename: () -> Unit, onDelete: () -> Unit) {
+    MenuAction(stringResource(Res.string.rooms_rename), Lucide.Pencil, onRename)
+    MenuAction(stringResource(Res.string.rooms_delete_room), Lucide.Trash2, onDelete)
+}
+
+/** What a room's menu has open: nothing, its rename, or the delete to confirm. */
+internal sealed interface RoomAsk {
+    data class Rename(val room: Room) : RoomAsk
+    data class Delete(val room: Room) : RoomAsk
+}
+
+/** The dialog for [ask], if any: renaming a room, or confirming it's to be deleted. */
+@Composable
+internal fun RoomAskDialogs(ask: RoomAsk?, onDismiss: () -> Unit, onRename: (Room, String) -> Unit, onDelete: (Room) -> Unit) {
+    // Kept while the dialog fades out, so its text doesn't vanish first.
+    var shown by remember { mutableStateOf(ask) }
+    if (ask != null) shown = ask
+    when (val current = shown) {
+        is RoomAsk.Rename -> RenameRoomDialog(current.room, visible = ask is RoomAsk.Rename, onDismiss = onDismiss, onRename = onRename)
+        is RoomAsk.Delete -> DeleteRoomDialog(current.room, visible = ask is RoomAsk.Delete, onDismiss = onDismiss, onDelete = onDelete)
+        null -> Unit
+    }
+}
+
+@Composable
+private fun RenameRoomDialog(room: Room, visible: Boolean, onDismiss: () -> Unit, onRename: (Room, String) -> Unit) {
+    val name = rememberTextFieldState(room.name)
+    // The dialog stays composed between asks: each rename starts from the room's name as it is now.
+    val inputMode = LocalInputModeManager.current
+    LaunchedEffect(room.roomId, room.name, visible) {
+        if (visible) name.resetTo(room.name, inputMode)
+    }
+    val newName = name.text.toString().trim()
+    val ready = newName.isNotEmpty() && newName != room.name
+    val submit = {
+        if (ready) {
+            onDismiss()
+            onRename(room, newName)
+        }
+    }
+    Dialog(
+        visible = visible,
+        onDismissRequest = onDismiss,
+        title = stringResource(Res.string.rooms_rename_room),
+        actions = {
+            Button(stringResource(Res.string.common_cancel), onClick = onDismiss, variant = ButtonVariant.Ghost, size = ButtonSize.Small)
+            Button(stringResource(Res.string.rooms_rename), onClick = submit, variant = ButtonVariant.Primary, size = ButtonSize.Small, enabled = ready)
+        },
+    ) {
+        TextField(
+            state = name,
+            label = stringResource(Res.string.rooms_room_name),
+            autofocus = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            // Enter renames on the desktop; a phone's Done only closes the keyboard, as it always has.
+            onKeyboardAction = { closeKeyboard -> if (isDesktop) submit() else closeKeyboard() },
+        )
+    }
+}
+
+@Composable
+private fun DeleteRoomDialog(room: Room, visible: Boolean, onDismiss: () -> Unit, onDelete: (Room) -> Unit) {
+    Dialog(
+        visible = visible,
+        onDismissRequest = onDismiss,
+        title = stringResource(Res.string.rooms_delete_title, room.name.ifBlank { stringResource(Res.string.rooms_room) }),
+        message = stringResource(Res.string.rooms_delete_detail),
+        actions = {
+            Button(stringResource(Res.string.common_cancel), onClick = onDismiss, variant = ButtonVariant.Ghost, size = ButtonSize.Small)
+            Button(stringResource(Res.string.rooms_delete), onClick = { onDismiss(); onDelete(room) }, variant = ButtonVariant.Danger, size = ButtonSize.Small)
+        },
+    )
+}

@@ -1,0 +1,11 @@
+{
+  "name": "hermes-companion-pairing",
+  "label": "Connect phone",
+  "description": "Create and manage short-lived pairing codes for Hermes Companion.",
+  "icon": "Smartphone",
+  "version": "0.2.1",
+  "tab": {
+    "hidden": true
+  },
+  "api": "plugin_api.py"
+}
